@@ -51,7 +51,14 @@ class Client(host: String = "localhost:8086", var username: String = "root", var
     } catch {
       case ex: Exception => (Nil, Some(ex.getMessage))
     }
-  
+    
+  private def get(url: String): error.Error = 
+    try {
+      responseToError(getResponse(httpClient.prepareGet(url).execute()))
+    } catch {
+      case ex: Exception => Some(ex.getMessage)
+    }
+    
   def createDatabase(name: String, replicationFactor: Int = 1): error.Error =
     postJson(url = getUrl("/db"),
       json = write(Map("name" -> name, "replicationFactor" -> replicationFactor)))
@@ -71,14 +78,8 @@ class Client(host: String = "localhost:8086", var username: String = "root", var
       url = getUrl(s"/db/$database/users/$username"),
       json = write(Map("password" -> password, "admin" -> isAdmin, "readFrom" -> readFrom, "writeTo" -> writeTo)))
 
-  def authenticateDatabaseUser(database: String, username: String, password: String): error.Error = {
-    try {
-      val url = getUrlWithUserAndPass(s"/db/$database/authenticate", username, password)
-      responseToError(getResponse(httpClient.prepareGet(url).execute()))
-    } catch {
-      case ex: Exception => Some(ex.getMessage)
-    }
-  }
+  def authenticateDatabaseUser(database: String, username: String, password: String): error.Error = 
+    get(url = getUrlWithUserAndPass(s"/db/$database/authenticate", username, password))
 
   def createClusterAdmin(username: String, password: String): error.Error =
     postJson(url = getUrl("/cluster_admins"),
@@ -94,14 +95,8 @@ class Client(host: String = "localhost:8086", var username: String = "root", var
   def getClusterAdminList: (List[response.ClusterAdmin], error.Error) =
     getList[response.ClusterAdmin](url = getUrl(s"/cluster_admins"))
 
-  def authenticateClusterAdmin(username: String, password: String): error.Error = {
-    try {
-      val url = getUrlWithUserAndPass("/cluster_admins/authenticate", username, password)
-      responseToError(getResponse(httpClient.prepareGet(url).execute()))
-    } catch {
-      case ex: Exception => Some(ex.getMessage)
-    }
-  }
+  def authenticateClusterAdmin(username: String, password: String): error.Error = 
+    get(url = getUrlWithUserAndPass("/cluster_admins/authenticate", username, password))
 
   def query(query: String, timePrecision: Option[String] = None, chunked: Boolean = false): (response.Response, error.Error) = {
     try {
@@ -123,8 +118,7 @@ class Client(host: String = "localhost:8086", var username: String = "root", var
     getList[response.ContinuousQuery](url = getUrl(s"/db/$database/continuous_queries"))
 
   def deleteContinuousQueries(id: Int): error.Error =
-    delete(
-      url = getUrl(s"/db/$database/continuous_queries/$id"))
+    delete(url = getUrl(s"/db/$database/continuous_queries/$id"))
 
   def writeSeries(series: Array[Series]): error.Error = writeSeriesCommon(series, None)
 
@@ -132,17 +126,11 @@ class Client(host: String = "localhost:8086", var username: String = "root", var
     writeSeriesCommon(series, Some(Map[String, String]("time_precision" -> timePrecision)))
   }
 
-  private def writeSeriesCommon(series: Array[Series], options: Option[Map[String, String]]): error.Error = {
-    try {
-      val url = getUrl(s"/db/$database/series") + (if (options.isDefined) options.get.map { o => val (k, v) = o; s"$k=$v" }.mkString("&", "&", "") else "")
-      val data = write(series)
+  private def writeSeriesCommon(series: Array[Series], options: Option[Map[String, String]]): error.Error = 
+    postJson(url = getUrl(s"/db/$database/series") + 
+        (if (options.isDefined) options.get.map { o => val (k, v) = o; s"$k=$v" }.mkString("&", "&", "") else ""),
+      json = write(series))
 
-      val fr = httpClient.preparePost(url).addHeader("Content-Type", "application/json").setBody(data).execute()
-      responseToError(getResponse(fr))
-    } catch {
-      case ex: Exception => Some(ex.getMessage)
-    }
-  }
   private def responseToError(r: Response): error.Error = {
     if (r.getStatusCode >= 200 && r.getStatusCode < 300) {
       return None
