@@ -2,12 +2,11 @@ package org.influxdb
 
 import org.json4s.jackson.Serialization
 import org.json4s.NoTypeHints
-import com.ning.http.client.{Response, AsyncHttpClient}
-import java.util.concurrent.{Future, TimeUnit}
+import com.ning.http.client.{ Response, AsyncHttpClient }
+import java.util.concurrent.{ Future, TimeUnit }
 import org.json4s.jackson.Serialization._
 import scala.Some
 import java.net.URLEncoder
-
 
 class Client(host: String = "localhost:8086", var username: String = "root", var password: String = "root", var database: String = "", schema: String = "http") {
   implicit val formats = Serialization.formats(NoTypeHints)
@@ -28,65 +27,49 @@ class Client(host: String = "localhost:8086", var username: String = "root", var
     }
   }
 
-  def createDatabase(name: String, replicationFactor: Int = 1): error.Error = {
+  private def postJson(url: String, json: String): error.Error = 
     try {
-      val url = getUrl("/db")
-      val payload = write(Map("name" -> name, "replicationFactor" -> replicationFactor))
-
-      val fr = httpClient.preparePost(url).addHeader("Content-Type", "application/json").setBody(payload).execute()
-      responseToError(getResponse(fr))
-    } catch {
-      case ex: Exception => Some(ex.getMessage)
-    }
+    responseToError(getResponse(httpClient.preparePost(url).addHeader("Content-Type", "application/json").setBody(json).execute()))
+  } catch {
+    case ex: Exception => Some(ex.getMessage)
   }
 
-  def deleteDatabase(name: String): error.Error = {
+  private def delete(url: String): error.Error = 
     try {
-      val url = getUrl(s"/db/$name")
-      val fr = httpClient.prepareDelete(url).execute()
-      responseToError(getResponse(fr))
-    } catch {
-      case ex: Exception => Some(ex.getMessage)
-    }
+    responseToError(getResponse(httpClient.prepareDelete(url).execute()))
+  } catch {
+    case ex: Exception => Some(ex.getMessage)
   }
 
-  def getDatabaseList: (List[response.Database], error.Error) = {
+  private def getList[T](url: String)(implicit manifest: Manifest[T]): (List[T], error.Error) = 
     try {
-      val url = getUrl("/db")
-
       val r = getResponse(httpClient.prepareGet(url).execute())
       responseToError(r) match {
-        case None => (read[List[response.Database]](r.getResponseBody), None)
+        case None => (read[List[T]](r.getResponseBody), None)
         case Some(err) => (Nil, Some(err))
       }
     } catch {
       case ex: Exception => (Nil, Some(ex.getMessage))
     }
-  }
+  
+  def createDatabase(name: String, replicationFactor: Int = 1): error.Error =
+    postJson(url = getUrl("/db"),
+      json = write(Map("name" -> name, "replicationFactor" -> replicationFactor)))
 
-  def createDatabaseUser(database: String, username: String, password: String, readFrom: Option[String] = None, writeTo: Option[String] = None): error.Error = {
-    try {
-      val url = getUrl(s"/db/$database/users")
-      val payload = write(Map("name" -> username, "password" -> password, "readFrom" -> readFrom, "writeTo" -> writeTo))
+  def deleteDatabase(name: String): error.Error =
+    delete(url = getUrl(s"/db/$name"))
 
-      val fr = httpClient.preparePost(url).addHeader("Content-Type", "application/json").setBody(payload).execute()
-      responseToError(getResponse(fr))
-    } catch {
-      case ex: Exception => Some(ex.getMessage)
-    }
-  }
+  def getDatabaseList: (List[response.Database], error.Error) =
+    getList[response.Database](url = getUrl("/db"))
 
-  def updateDatabaseUser(database: String, username: String, password: Option[String] = None, isAdmin: Boolean = false, readFrom: Option[String] = None, writeTo: Option[String] = None): error.Error = {
-    try {
-      val url = getUrl(s"/db/$database/users/$username")
-      val payload = write(Map("password" -> password, "admin" -> isAdmin, "readFrom" -> readFrom, "writeTo" -> writeTo))
+  def createDatabaseUser(database: String, username: String, password: String, readFrom: Option[String] = None, writeTo: Option[String] = None): error.Error =
+    postJson(url = getUrl(s"/db/$database/users"),
+      json = write(Map("name" -> username, "password" -> password, "readFrom" -> readFrom, "writeTo" -> writeTo)))
 
-      val fr = httpClient.preparePost(url).addHeader("Content-Type", "application/json").setBody(payload).execute()
-      responseToError(getResponse(fr))
-    } catch {
-      case ex: Exception => Some(ex.getMessage)
-    }
-  }
+  def updateDatabaseUser(database: String, username: String, password: Option[String] = None, isAdmin: Boolean = false, readFrom: Option[String] = None, writeTo: Option[String] = None): error.Error =
+    postJson(
+      url = getUrl(s"/db/$database/users/$username"),
+      json = write(Map("password" -> password, "admin" -> isAdmin, "readFrom" -> readFrom, "writeTo" -> writeTo)))
 
   def authenticateDatabaseUser(database: String, username: String, password: String): error.Error = {
     try {
@@ -97,53 +80,19 @@ class Client(host: String = "localhost:8086", var username: String = "root", var
     }
   }
 
-  def createClusterAdmin(username: String, password: String): error.Error = {
-    try {
-      val url = getUrl("/cluster_admins")
-      val payload = write(Map("name" -> username, "password" -> password))
-      val fr = httpClient.preparePost(url).addHeader("Content-Type", "application/json").setBody(payload).execute()
-      responseToError(getResponse(fr))
-    } catch {
-      case ex: Exception => Some(ex.getMessage)
-    }
-  }
+  def createClusterAdmin(username: String, password: String): error.Error =
+    postJson(url = getUrl("/cluster_admins"),
+      json = write(Map("name" -> username, "password" -> password)))
 
-  def updateClusterAdmin(username: String, password: String): error.Error = {
-    try {
-      val url = getUrl(s"/cluster_admins/$username")
-      val payload = write(Map("password" -> password))
+  def updateClusterAdmin(username: String, password: String): error.Error =
+    postJson(url = getUrl(s"/cluster_admins/$username"),
+      json = write(Map("password" -> password)))
 
-      val fr = httpClient.preparePost(url).addHeader("Content-Type", "application/json").setBody(payload).execute()
-      responseToError(getResponse(fr))
-    } catch {
-      case ex: Exception => Some(ex.getMessage)
-    }
-  }
+  def deleteClusterAdmin(username: String): error.Error =
+    delete(url = getUrl(s"/cluster_admins/$username"))
 
-  def deleteClusterAdmin(username: String): error.Error = {
-    try {
-      val url = getUrl(s"/cluster_admins/$username")
-
-      val fr = httpClient.prepareDelete(url).execute()
-      responseToError(getResponse(fr))
-    } catch {
-      case ex: Exception => Some(ex.getMessage)
-    }
-  }
-
-  def getClusterAdminList: (List[response.ClusterAdmin], error.Error) = {
-    try {
-      val url = getUrl(s"/cluster_admins")
-
-      val r = getResponse(httpClient.prepareGet(url).execute())
-      responseToError(r) match {
-        case None => (read[List[response.ClusterAdmin]](r.getResponseBody), None)
-        case Some(err) => (Nil, Some(err))
-      }
-    } catch {
-      case ex: Exception => (Nil, Some(ex.getMessage))
-    }
-  }
+  def getClusterAdminList: (List[response.ClusterAdmin], error.Error) =
+    getList[response.ClusterAdmin](url = getUrl(s"/cluster_admins"))
 
   def authenticateClusterAdmin(username: String, password: String): error.Error = {
     try {
@@ -170,27 +119,12 @@ class Client(host: String = "localhost:8086", var username: String = "root", var
     }
   }
 
-  def getContinuousQueries: (List[response.ContinuousQuery], error.Error) = {
-    try {
-      val url = getUrl(s"/db/$database/continuous_queries")
-      val r = getResponse(httpClient.prepareGet(url).execute())
-      responseToError(r) match {
-        case None => (read[List[response.ContinuousQuery]](r.getResponseBody), None)
-        case Some(err) => (Nil, Some(err))
-      }
-    } catch {
-      case ex: Exception => (Nil, Some(ex.getMessage))
-    }
-  }
+  def getContinuousQueries: (List[response.ContinuousQuery], error.Error) = 
+    getList[response.ContinuousQuery](url = getUrl(s"/db/$database/continuous_queries"))
 
-  def deleteContinuousQueries(id: Int): error.Error = {
-    try {
-      val url = getUrl(s"/db/$database/continuous_queries/$id")
-      responseToError(getResponse(httpClient.prepareDelete(url).execute()))
-    } catch {
-      case ex: Exception => Some(ex.getMessage)
-    }
-  }
+  def deleteContinuousQueries(id: Int): error.Error =
+    delete(
+      url = getUrl(s"/db/$database/continuous_queries/$id"))
 
   def writeSeries(series: Array[Series]): error.Error = writeSeriesCommon(series, None)
 
@@ -227,49 +161,28 @@ package object response {
   case class ClusterAdmin(username: String)
   case class ContinuousQuery(id: Int, query: String)
   case class Response(json: String) {
-    
-    def toSeries: Array[Series] = {
-      val all = JSON.parseFull(json).get.asInstanceOf[List[Any]]
-      val series = new Array[Series](all.length)
 
-      var i = 0
-      all.foreach { ai =>
+    def toSeries: Array[Series] =
+      JSON.parseFull(json).get.asInstanceOf[List[Any]].map { ai =>
+
+        // it would be better to define a case class here, deserialize to that
+        // to get rid of the need for the asInstanceOf ... 
+
         val m = ai.asInstanceOf[Map[String, Any]]
-        val name = m.get("name").get.asInstanceOf[String]
-        val columns = m.get("columns").get.asInstanceOf[List[String]].toArray
-        val points = m.get("points").get.asInstanceOf[List[List[Any]]].map(li => li.toArray).toArray
+        Series(
+          name = m("name").asInstanceOf[String],
+          columns = m("columns").asInstanceOf[List[String]].toArray,
+          points = m("points").asInstanceOf[List[List[Any]]].map(_.toArray).toArray)
+      }.toArray
 
-        series(i) = Series(name, columns, points)
-        i += 1
-      }
-      series
-    }
-
-    def toSeriesMap: Array[SeriesMap] = {
-      val all = JSON.parseFull(json).get.asInstanceOf[List[Any]]
-      val series = new Array[SeriesMap](all.length)
-
-      var i = 0
-      all.foreach { ai =>
-        val m = ai.asInstanceOf[Map[String, Any]]
-        val name = m.get("name").get.asInstanceOf[String]
-        val columns = m.get("columns").get.asInstanceOf[List[String]]
-
-        var ii = 0
-        val mm = scala.collection.mutable.Map[String, Array[Any]]()
-        val cc = new Array[String](columns.size)      
-        columns.foreach { cl => cc(ii) = cl; mm(cl) = Array[Any](); ii += 1 }
-
-        m.get("points").get.asInstanceOf[List[List[Any]]].foreach { pt => 
-          ii = 0        
-          pt.foreach { v => mm += cc(ii) -> (mm(cc(ii)) :+ v); ii += 1; }
-        }
-        series(i) = SeriesMap(name, mm.toMap)
-        i += 1
-      }
-      series    
-    }
-  }  
+    def toSeriesMap: Array[SeriesMap] =
+      toSeries.map {
+        case Series(name, columns, points) =>
+          SeriesMap(
+            name = name,
+            objects = columns.zip(points.map(_.toArray)).toMap)
+      }.toArray
+  }
 }
 
 package object error {
